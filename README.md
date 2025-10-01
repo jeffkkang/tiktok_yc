@@ -1,91 +1,51 @@
-# TikTok Analyzer — Quick Start
+# TikTok Keyword Scraper
 
-A minimal pipeline to fetch TikTok metadata, download the video, optionally scrape comments, and transcribe audio.
+Search TikTok by keyword and export creator profiles to CSV with email addresses and follower counts.
+
+## Features
+
+- 🔍 Keyword-based video search on TikTok
+- 📊 Auto-sort results by view count
+- 👤 Extract creator profiles (username, email, followers)
+- 📧 Multiple email extraction methods (bio, profile API)
+- 📁 CSV output with video links and metadata
+- 🍪 Cookie-based authentication
+- 🎯 Configurable limits and delays
 
 ## Prerequisites
+
 - Python 3.9+
-- FFmpeg installed and on PATH
-  - macOS: `brew install ffmpeg`
-  - Windows (PowerShell/Admin): `choco install ffmpeg` or use the official build
-  - Linux: `apt-get install ffmpeg` (or your distro’s package manager)
+- Google Chrome browser
+- ChromeDriver (auto-installed via webdriver-manager)
 
-## Setup (Virtual Environment)
-- macOS/Linux:
-  - `python3 -m venv .venv`
-  - `source .venv/bin/activate`
-- Windows (PowerShell):
-  - `py -3 -m venv .venv`
-  - `.\.venv\Scripts\activate`
+## Setup
 
-Upgrade pip and install dependencies:
-- `python -m pip install -U pip setuptools wheel`
-- Core deps:
-  - `pip install -r requirements.txt`
-- Transcription (optional, disabled by default):
-  - If you want Whisper/Google STT features, additionally install:
-    - Whisper + PyTorch: `pip install openai-whisper` and follow PyTorch install guidance for your platform
-    - Google STT: `pip install SpeechRecognition`
-- Third‑party comment scraper deps (optional, used when `--comments`):
-  - `pip install -r thirdparty/tiktok-comment-scrapper/requirements.txt`
+### 1. Create Virtual Environment
 
-## Basic Commands
-- Quick all‑in‑one run (metadata + comments + download + transcription):
-  - `python -m src.default_runner "https://www.tiktok.com/@USER/video/VIDEO_ID"`
-
-- Full pipeline with options:
-  - `python -m src.pipeline --url "https://www.tiktok.com/@USER/video/VIDEO_ID" --comments`
-  - Only analyze local MP4: `python -m src.pipeline --mp4 path/to/video.mp4 --transcribe`
-  - Audio only (MP3 extract): `python -m src.pipeline --url "..." --extract-audio-only`
-  - Skip metadata: `python -m src.pipeline --url "..." --skip-metadata`
-
-## Metadata Only
-- Save fast metadata summary to the run folder:
-  - `python -m src.scrapers.tiktok_video_metadata_scraper "https://www.tiktok.com/@USER/video/VIDEO_ID"`
-- Read quick fields (loads `<base>_summary.json` if present):
-  - `python -m src.utils.meta_summary runs/<created_folder>/@USER_video_VIDEO_ID_metadata.json`
-
-## Comments Only
-- Run bundled third‑party scraper and normalize outputs to `runs/...`:
-  - `python -m src.scrapers.thirdparty_tpcs_runner "https://www.tiktok.com/@USER/video/VIDEO_ID" --out runs/<created_folder> --size 500`
-- Normalize an existing JSON/CSV/XLSX of comments:
-  - `python -m src.scrapers.comments_ingest thirdparty.json --url "..." --out runs/<created_folder>`
-
-## Transcription (Optional)
-- Disabled by default. To enable, install the optional deps above and run:
-  - Whisper: `python -m src.transcribers.tiktok_video_to_text path/to/video.mp4 -m openai`
-  - Google STT: `python -m src.transcribers.tiktok_video_to_text path/to/video.mp4 -m google`
-
-## Outputs
-- Run directory: `runs/<uploader>_<videoId>_<YYYYMMDD_HHMMSS>/`
-  - Video file (from `yt-dlp`): `<uploader>_<id>.mp4`
-  - Metadata summary: `@USER_video_VIDEO_ID_metadata_summary.json`
-  - Comments (when enabled): `<base>_comments.json` and `<base>_comments.jsonl`
-  - Transcription (when enabled): `<base>.json` with `{"text": ...}`
-
-## Keyword Search → Creator Profile Exporter (NEW)
-
-**NEW**: Search TikTok by keyword and export creator profiles to CSV!
-
+**macOS/Linux:**
 ```bash
-# Search by keyword and collect creator profiles
-python tiktok_keyword_scraper.py --keyword "K뷰티" --limit 50 --out creators.csv
-
-# With browser mode (for CAPTCHA)
-python tiktok_keyword_scraper.py --keyword "skincare routine" --limit 100 --out skincare.csv --use-browser
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-**Features**:
-- Keyword-based video search
-- Auto-sort by view count
-- Extract creator profiles (email, followers)
-- CSV output with video links
-- Reuses existing `tiktok-profile-scraper` code
+**Windows (PowerShell):**
+```bash
+py -3 -m venv .venv
+.\.venv\Scripts\activate
+```
 
-**Documentation**: See `KEYWORD_SCRAPER_GUIDE.md` for full details.
+### 2. Install Dependencies
 
-### Manual Cookie Update
+```bash
+python -m pip install -U pip setuptools wheel
+pip install -r requirements.txt
+```
 
-If the scraper is not finding results, you may need to update cookies manually:
+### 3. Configure Cookies
+
+The scraper requires valid TikTok cookies for authentication.
+
+#### Manual Cookie Update
 
 1. Open TikTok in your browser (Chrome/Edge) and log in
 2. Open Developer Console (F12 or Cmd+Option+I)
@@ -115,10 +75,130 @@ pbpaste > cookies.json  # macOS
 # or manually create cookies.json and paste the content
 ```
 
-7. Run the scraper again with the updated cookies
+## Usage
 
-## Notes & Tips
-- URL format: This repo expects `https://www.tiktok.com/@USER/video/VIDEO_ID`. Other forms may still work, but the run folder name may fall back to `tiktok_run_<timestamp>`.
-- Update `yt-dlp` if downloads fail: `pip install -U yt-dlp`
-- FFmpeg is required for audio extraction and Whisper; ensure `ffmpeg` is on PATH.
-- Whisper CPU can be slow; consider GPU if you enable it.
+### Basic Command
+
+```bash
+python tiktok_keyword_scraper.py --keyword "K뷰티" --limit 50 --out creators.csv
+```
+
+### Command Options
+
+```bash
+python tiktok_keyword_scraper.py [OPTIONS]
+
+Options:
+  -k, --keyword TEXT          Search keyword (required)
+  -l, --limit INTEGER         Number of videos to collect (default: 50)
+  -o, --out TEXT             Output CSV file path (default: creators.csv)
+  --delay-min FLOAT          Minimum delay between requests in seconds (default: 1.5)
+  --delay-max FLOAT          Maximum delay between requests in seconds (default: 3.0)
+  --use-browser              Run in visible browser mode (for debugging)
+  --cookies PATH             Path to cookies JSON file (default: cookies.json)
+```
+
+### Examples
+
+**Search for K-beauty creators:**
+```bash
+python tiktok_keyword_scraper.py -k "K뷰티" -l 50 -o kbeauty.csv
+```
+
+**Search with custom delays:**
+```bash
+python tiktok_keyword_scraper.py -k "skincare" -l 100 -o skincare.csv --delay-min 2.0 --delay-max 4.0
+```
+
+**Debug mode with visible browser:**
+```bash
+python tiktok_keyword_scraper.py -k "beauty" -l 10 -o test.csv --use-browser
+```
+
+**Short form (using aliases):**
+```bash
+python tiktok_keyword_scraper.py -k "beauty" -l 5 -o skincare.csv
+```
+
+## Output Format
+
+The scraper generates a CSV file with the following columns:
+
+| Column | Description |
+|--------|-------------|
+| `keyword` | Search keyword used |
+| `video_id` | TikTok video ID |
+| `video_url` | Full URL to the video |
+| `creator_id` | Creator's unique ID |
+| `creator_username` | Creator's @username |
+| `creator_email` | Extracted email address(es) |
+| `follower_count` | Number of followers |
+| `source_api` | Data source (e.g., "tiktok_api") |
+| `extraction_method` | How email was found (e.g., "bio_text") |
+| `scraped_at` | Timestamp of scraping |
+| `notes` | Additional notes or errors |
+
+## Workflow
+
+1. **Search Videos**: Searches TikTok for the specified keyword
+2. **Sort by Views**: Sorts results by view count (highest first)
+3. **Extract Creators**: Visits each creator's profile
+4. **Find Emails**: Extracts email addresses from bio and profile data
+5. **Export to CSV**: Saves results to CSV file (saves every 10 profiles)
+
+## Troubleshooting
+
+### No Results Found
+
+If the scraper returns 0 results:
+1. Update your cookies using the manual method above
+2. Try running with `--use-browser` flag to see what's happening
+3. Check if TikTok's page structure has changed
+
+### CAPTCHA Issues
+
+If you encounter CAPTCHA:
+1. Use `--use-browser` flag to run in visible mode
+2. Manually solve the CAPTCHA when it appears
+3. Press Enter in the terminal to continue
+
+### Rate Limiting
+
+If you're being rate-limited:
+1. Increase delays: `--delay-min 3.0 --delay-max 5.0`
+2. Reduce the limit: `-l 20` instead of `-l 100`
+3. Wait a few hours before running again
+
+## Advanced Usage
+
+See `KEYWORD_SCRAPER_GUIDE.md` for detailed documentation including:
+- Architecture overview
+- Profile scraper integration
+- Email extraction methods
+- Error handling strategies
+- Performance optimization tips
+
+## Project Structure
+
+```
+.
+├── tiktok_keyword_scraper.py      # Main scraper script
+├── tiktok-profile-scraper/        # Profile scraping library
+├── tiktok-hashtag-scraper/        # Hashtag scraping utilities
+├── cookies.json                   # TikTok authentication cookies
+├── extract_cookies.py             # Cookie extraction utility
+├── test_keyword_scraper.sh        # Test script
+├── KEYWORD_SCRAPER_GUIDE.md       # Detailed documentation
+└── README.md                      # This file
+```
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Notes
+
+- This tool is for educational and research purposes only
+- Respect TikTok's Terms of Service and rate limits
+- Use reasonable delays to avoid being blocked
+- Keep your cookies file secure and private
