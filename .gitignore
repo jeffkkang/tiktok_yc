@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Build/dist
+build/
+dist/
+
+# Project outputs (large / reproducible)
+runs/
+logs/
+*.log
+
+# Media artifacts
+*.mp4
+*.mp3
+*.wav
+*.mov
+*_objects/
+*_faces/
+
+# Models/weights
+*.pt
+*.onnx
+*.engine
+
+# Third-party caches/data
+thirdparty/**/data/
+
+# Vendor bundles accidentally added
+face_recognition-*/
+
+# Node (if present)
+node_modules/
+
