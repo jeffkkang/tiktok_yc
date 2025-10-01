@@ -24,6 +24,14 @@ runs/
 logs/
 *.log
 
+# Scraper output files
+*.csv
+*.json
+!cookies.json
+*.png
+*.jpg
+*.jpeg
+
 # Media artifacts
 *.mp4
 *.mp3
