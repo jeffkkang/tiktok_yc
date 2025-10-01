@@ -1,3 +1,4 @@
+# Core dependencies
 pandas==2.1.4
 pydub==0.25.1
 tqdm==4.66.3
@@ -5,3 +6,17 @@ yt-dlp==2025.1.26
 requests>=2.32.0
 loguru>=0.7.0
 jmespath>=1.0.1
+
+# Web scraping
+selenium>=4.16.0
+webdriver-manager>=4.0.1
+undetected-chromedriver>=3.5.4
+
+# Configuration
+pyyaml>=6.0.1
+
+# Excel support (Phase 3)
+openpyxl>=3.1.2
+
+# Optional: Better progress bars
+tqdm>=4.66.3
