@@ -54,3 +54,12 @@ face_recognition-*/
 # Node (if present)
 node_modules/
 
+tiktok_session_cookies.json
+results/*_session_*.json
+
+# Archive (old files)
+archive/
+
+# Cleanup script (temporary)
+cleanup_project.sh
+cookies.json

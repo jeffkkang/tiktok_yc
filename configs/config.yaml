@@ -1,0 +1,56 @@
+# TikTok Keyword Scraper Configuration
+# Phase 1: Configuration file support
+
+# Default settings
+defaults:
+  # Keywords to search (can be overridden by CLI)
+  keywords: []
+
+  # Number of videos to collect per keyword
+  limit: 50
+
+  # Output settings
+  output_file: "output.csv"
+  output_format: "csv"  # csv or xlsx
+
+  # Cookie file path
+  cookies_file: "data/cookies.json"
+
+  # Delay settings (seconds)
+  delay_min: 1.5
+  delay_max: 3.0
+
+  # Browser settings
+  headless: true
+  use_browser: false  # Set to true for visible browser mode
+  use_undetected: true  # Use undetected-chromedriver
+
+# Phase 2: Retry and stability settings
+retry:
+  max_retries: 3
+  retry_delay: 5  # seconds
+
+# Phase 3: Filtering options
+filters:
+  min_followers: 0
+  min_views: 0
+  email_required: false  # Only include creators with email
+
+# Phase 3: Incremental scraping
+incremental:
+  enabled: false
+  skip_existing: false  # Skip creators already in output file
+
+# Phase 4: Performance settings
+performance:
+  parallel: false
+  max_workers: 3  # Number of parallel workers
+  cache_enabled: true
+  cache_ttl: 3600  # seconds (1 hour)
+
+# Logging settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  console_level: "INFO"
+  file_level: "DEBUG"
+  log_file: "tiktok_keyword_scraper.log"

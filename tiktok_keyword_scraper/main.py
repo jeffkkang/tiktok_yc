@@ -14,10 +14,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from .models import CreatorProfile, VideoResult
-from .scraper import TikTokSearchScraper
+from .scraper import TikTokSearchScraper, CaptchaDetectedException
 from .profile import ProfileScraper
 from .cookie import CookieManager
-from .email import EmailExtractor
+from .email_utils import EmailExtractor
 from .config import ConfigManager
 from .output import OutputManager
 from .logger import setup_logger, get_logger
@@ -36,6 +36,7 @@ class TikTokKeywordScraperApp:
         """
         self.config_manager = config_manager
         self.config = config_manager.create_scraper_config(cli_args)
+        self.use_tags = cli_args.get("use_tags", False)
 
         # 로깅 설정
         log_config = config_manager.get_logging_config()
@@ -77,8 +78,20 @@ class TikTokKeywordScraperApp:
             # Phase 3: 다중 키워드 지원
             all_profiles = []
             for keyword in self.config.keywords:
-                profiles = self._process_keyword(keyword)
-                all_profiles.extend(profiles)
+                try:
+                    profiles = self._process_keyword(keyword)
+                    all_profiles.extend(profiles)
+                except CaptchaDetectedException as e:
+                    self.logger.error(f"❌ 키워드 '{keyword}' 처리 중 CAPTCHA 감지: {e}")
+                    self.logger.info("🔄 브라우저 모드로 재시작합니다...")
+
+                    # 정리 후 브라우저 모드로 재시작
+                    self._cleanup()
+                    self._initialize_scrapers(force_browser=True)  # 브라우저 모드로 재시작
+
+                    # 다시 시도
+                    profiles = self._process_keyword(keyword)
+                    all_profiles.extend(profiles)
 
             # 결과 저장
             self._save_results(all_profiles)
@@ -103,12 +116,15 @@ class TikTokKeywordScraperApp:
         finally:
             self._cleanup()
 
-    def _initialize_scrapers(self):
+    def _initialize_scrapers(self, force_browser: bool = False):
         """스크래퍼 초기화"""
+        # 브라우저 모드 결정 (CAPTCHA 감지 시 강제 브라우저 모드)
+        use_browser = self.config.use_browser or force_browser
+
         # 검색 스크래퍼
         self.search_scraper = TikTokSearchScraper(
             cookie_manager=self.cookie_manager,
-            headless=not self.config.use_browser,
+            headless=not use_browser,
             delay_min=self.config.delay_min,
             delay_max=self.config.delay_max,
             use_undetected=True
@@ -126,18 +142,22 @@ class TikTokKeywordScraperApp:
 
     def _process_keyword(self, keyword: str) -> List[CreatorProfile]:
         """
-        키워드 처리
+        키워드 또는 태그 처리
 
         Args:
-            keyword: 검색 키워드
+            keyword: 검색 키워드 또는 태그
 
         Returns:
             List[CreatorProfile]: 크리에이터 프로필 리스트
         """
-        self.logger.info(f"\n🔍 키워드 '{keyword}' 처리 중...")
-
-        # 1. 비디오 검색
-        videos = self.search_scraper.search_videos_by_keyword(keyword, self.config.limit)
+        if self.use_tags:
+            self.logger.info(f"\n🏷️  태그 '{keyword}' 처리 중...")
+            # 1. 태그로 비디오 검색
+            videos = self.search_scraper.search_videos_by_tag(keyword, self.config.limit)
+        else:
+            self.logger.info(f"\n🔍 키워드 '{keyword}' 처리 중...")
+            # 1. 키워드로 비디오 검색
+            videos = self.search_scraper.search_videos_by_keyword(keyword, self.config.limit)
 
         if not videos:
             self.logger.warning(f"⚠️  '{keyword}' 검색 결과가 없습니다.")
@@ -341,13 +361,18 @@ def parse_args():
 
     # 필수 인자
     parser.add_argument("-k", "--keywords", type=str, required=True,
-                        help="검색 키워드 (쉼표로 구분, 예: 'kbeauty,skincare')")
+                        help="검색 키워드 또는 태그 (쉼표로 구분, 예: 'kbeauty,skincare')")
+
+    # 태그 모드
+    parser.add_argument("-t", "--tag", action="store_true",
+                        help="태그 모드로 검색 (예: -k 'tiktokgrowthtips' -t)")
 
     # 선택 인자
     parser.add_argument("-l", "--limit", type=int, default=None,
                         help="수집할 비디오 수 (기본값: config.yaml 또는 50)")
     parser.add_argument("-o", "--output", dest="output_file", type=str, default=None,
                         help="출력 파일 경로 (기본값: output.csv)")
+
     parser.add_argument("--format", dest="output_format", choices=["csv", "xlsx"], default=None,
                         help="출력 형식")
     parser.add_argument("--cookies", dest="cookies_file", type=str, default=None,
@@ -399,13 +424,24 @@ def main():
     # 키워드 파싱
     keywords = [k.strip() for k in args.keywords.split(',')]
 
+    # output_file이 지정되지 않은 경우 자동 생성
+    output_file = args.output_file
+    if not output_file:
+        # results 폴더 생성
+        import os
+        os.makedirs("results", exist_ok=True)
+
+        # 첫 번째 키워드를 파일명으로 사용 (공백은 언더스코어로)
+        keyword_filename = keywords[0].replace(" ", "_").replace("/", "_")
+        output_file = f"results/{keyword_filename}.csv"
+
     # CLI 인자를 dict로 변환
     cli_args = {
         "keywords": keywords,
         "limit": args.limit,
-        "output_file": args.output,
+        "output_file": output_file,
         "output_format": args.output_format,
-        "cookies_file": args.cookies,
+        "cookies_file": args.cookies_file,
         "delay_min": args.delay_min,
         "delay_max": args.delay_max,
         "use_browser": args.use_browser,
@@ -417,6 +453,7 @@ def main():
         "skip_existing": args.skip_existing,
         "parallel": args.parallel,
         "max_workers": args.max_workers,
+        "use_tags": args.tag,
     }
 
     # 설정 관리자

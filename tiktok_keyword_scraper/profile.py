@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-from .email import EmailExtractor
+from .email_utils import EmailExtractor
 from .utils import parse_count, random_delay, retry_on_failure
 
 logger = logging.getLogger(__name__)

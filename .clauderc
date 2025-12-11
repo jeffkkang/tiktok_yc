@@ -1,0 +1,96 @@
+# Claude Code Project Configuration
+# TikTok Scraper Project
+
+## Project Context
+This is a TikTok keyword scraping project with automated keyword management and duplicate prevention.
+
+## Critical Files to Reference
+
+### 1. SCRAPING_SOP.md (REQUIRED FOR ALL SCRAPING REQUESTS)
+**Location:** `/Users/im-yechan/CodeCollabeauty/tiktokscaperforseeding/SCRAPING_SOP.md`
+
+**Purpose:** Standard Operating Procedure for handling user scraping requests
+
+**When to use:** EVERY TIME user requests scraping
+
+**Key Process:**
+1. STEP 1: Check keyword duplicates with `keyword_manager.py`
+2. STEP 2: Verify cookie status (must be < 2 hours old)
+3. STEP 3: Execute scraping (single or batch)
+4. STEP 4: Report results to user
+
+### 2. Keyword Management Guide
+**Location:** `/Users/im-yechan/CodeCollabeauty/tiktokscaperforseeding/KEYWORD_MANAGEMENT_GUIDE.md`
+
+**Purpose:** Detailed guide for keyword management system
+
+### 3. Project Summary
+**Location:** `/Users/im-yechan/CodeCollabeauty/tiktokscaperforseeding/SUMMARY.md`
+
+**Purpose:** Overall project status and statistics
+
+## Key Tools
+
+### Primary Tools
+- `keyword_manager.py` - Keyword history and duplicate management
+- `smart_batch_scraper.py` - Smart batch scraper with auto-duplicate prevention
+- `fast_api_scraper_v4.py` - Fast API scraper with parallel processing
+- `refresh_and_retry.py` - Cookie refresh utility
+
+### Data Files
+- `keyword_history.json` - Keyword usage history (auto-generated)
+- `used_keywords.txt` - List of used keywords (auto-generated)
+- `results/*_api_v4.csv` - Collected data files
+
+## Quick Reference Commands
+
+```bash
+# Check current status
+python keyword_manager.py
+
+# Single keyword scraping
+python -m tiktok_keyword_scraper.fast_api_scraper_v4 -k "keyword" -l 200
+
+# Batch scraping (auto skip duplicates)
+python smart_batch_scraper.py -f keywords.txt
+
+# Force re-scraping
+python smart_batch_scraper.py -f keywords.txt --force
+
+# Refresh cookies
+python refresh_and_retry.py
+```
+
+## Current Statistics (as of 2025-10-05)
+- Total keywords: 22
+- Total items: 9,790
+- Average per keyword: 445 items
+- Duplicate files: 0 (all consolidated)
+
+## Important Reminders
+
+1. ⚠️ ALWAYS check SCRAPING_SOP.md before executing scraping requests
+2. ⚠️ ALWAYS verify cookie status before large batch jobs
+3. ⚠️ ALWAYS run keyword_manager.py after scraping to update history
+4. ⚠️ ALWAYS provide estimated time for batch requests (20+ keywords)
+
+## Error Handling
+
+### Common Errors
+- `status_code: 2483` → Cookie expired, run `refresh_and_retry.py`
+- `0 items collected` → Check keyword spelling or try different keyword
+- Timeout → Automatic retry (max 3 times)
+
+## Workflow for User Requests
+
+When user says: "Scrape [keyword(s)]"
+
+1. Read SCRAPING_SOP.md to determine scenario
+2. Follow the step-by-step process
+3. Report results with statistics
+4. Update keyword_history.json
+
+---
+
+**Last Updated:** 2025-10-05
+**Project Status:** ✅ Production Ready

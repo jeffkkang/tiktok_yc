@@ -53,7 +53,7 @@ class ConfigManager:
             "defaults": {
                 "keywords": [],
                 "limit": 50,
-                "output_file": "output.csv",
+                "output_file": "results/output.csv",
                 "output_format": "csv",
                 "cookies_file": "cookies.json",
                 "delay_min": 1.5,

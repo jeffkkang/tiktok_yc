@@ -12,7 +12,7 @@ from .models import VideoResult, CreatorProfile, ScraperConfig
 from .scraper import TikTokSearchScraper
 from .profile import ProfileScraper
 from .cookie import CookieManager
-from .email import EmailExtractor
+from .email_utils import EmailExtractor
 from .utils import parse_count, extract_hashtags, random_delay
 
 __all__ = [
