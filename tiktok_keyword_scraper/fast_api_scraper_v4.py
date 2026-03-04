@@ -449,15 +449,8 @@ class FastTikTokAPIScraperV4:
             creator_email = self._extract_email(author.get('signature', ''))
 
             follower_count = stats.get('followerCount', 0)
-            following_count = stats.get('followingCount', 0)
-            video_count = stats.get('videoCount', 0)
-            heart_count = stats.get('heartCount', 0)
-
-            hashtags = ','.join([
-                tag.get('title', '')
-                for tag in item.get('textExtra', [])
-                if tag.get('hashtagName')
-            ])
+            # 불필요한 필드 제거: following_count, video_count, heart_count, hashtags
+            # 스크래핑 속도 최적화를 위해 제거
 
             create_time = item.get('createTime', '')
 
@@ -469,12 +462,8 @@ class FastTikTokAPIScraperV4:
                 'creator_nickname': creator_nickname,
                 'creator_email': creator_email,
                 'follower_count': follower_count,
-                'following_count': following_count,
-                'video_count': video_count,
-                'heart_count': heart_count,
                 'video_desc': video_desc,
-                'create_time': create_time,
-                'hashtags': hashtags
+                'create_time': create_time
             }
 
         except Exception as e:
@@ -527,10 +516,8 @@ if __name__ == "__main__":
 
     with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
         fieldnames = [
-            'keyword', 'video_id', 'video_url', 'creator_id',
-            'creator_username', 'creator_nickname', 'creator_email',
-            'follower_count', 'following_count', 'video_count', 'heart_count',
-            'video_desc', 'create_time', 'hashtags', 'source_api', 'scraped_at'
+            'keyword', 'creator_username', 'creator_nickname',
+            'creator_email', 'follower_count', 'video_url'
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -540,24 +527,14 @@ if __name__ == "__main__":
 
         for video in videos:
             parsed = scraper.parse_video(video)
-            if parsed and parsed['creator_username']:
+            if parsed and parsed['creator_username'] and parsed['creator_email']:
                 writer.writerow({
                     'keyword': args.keyword,
-                    'video_id': parsed['video_id'],
-                    'video_url': parsed['video_url'],
-                    'creator_id': parsed['creator_id'],
                     'creator_username': parsed['creator_username'],
                     'creator_nickname': parsed['creator_nickname'],
-                    'creator_email': parsed['creator_email'] or '',
+                    'creator_email': parsed['creator_email'],
                     'follower_count': parsed['follower_count'],
-                    'following_count': parsed['following_count'],
-                    'video_count': parsed['video_count'],
-                    'heart_count': parsed['heart_count'],
-                    'video_desc': parsed['video_desc'],
-                    'create_time': parsed['create_time'],
-                    'hashtags': parsed['hashtags'],
-                    'source_api': 'tiktok_api_v4_parallel',
-                    'scraped_at': datetime.now().isoformat()
+                    'video_url': parsed['video_url'],
                 })
                 saved_count += 1
 

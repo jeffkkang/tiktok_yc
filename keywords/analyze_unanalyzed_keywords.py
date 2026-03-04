@@ -475,8 +475,7 @@ class KeywordAnalyzer:
             with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
                 fieldnames = [
                     'keyword', 'video_id', 'video_url', 'creator_id',
-                    'creator_username', 'view_count', 'like_count',
-                    'video_desc', 'hashtags', 'scraped_at'
+                    'creator_username', 'video_desc', 'scraped_at'
                 ]
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
@@ -488,10 +487,7 @@ class KeywordAnalyzer:
                         'video_url': result.video_url,
                         'creator_id': result.creator_id,
                         'creator_username': result.creator_username,
-                        'view_count': result.view_count,
-                        'like_count': result.like_count,
                         'video_desc': result.video_desc,
-                        'hashtags': ','.join(result.hashtags) if result.hashtags else '',
                         'scraped_at': datetime.now().isoformat()
                     })
 

@@ -52,6 +52,7 @@ class ProfileScraper:
 
         profile_data = {
             "username": username,
+            "nickname": "",
             "emails": [],
             "follower_count": 0,
             "bio": "",
@@ -77,6 +78,7 @@ class ProfileScraper:
 
             # 데이터 추출
             profile_data["follower_count"] = self._extract_follower_count()
+            profile_data["nickname"] = self._extract_nickname()
             profile_data["bio"] = self._extract_bio()
             profile_data["emails"] = self._extract_emails(profile_data["bio"])
 
@@ -134,38 +136,60 @@ class ProfileScraper:
 
     def _extract_bio(self) -> str:
         """
-        프로필 설명(Bio) 추출
+        프로필 설명(Bio) 추출 — bio 전용 셀렉터만 사용 (닉네임 혼입 방지)
 
         Returns:
             str: Bio 텍스트
         """
-        selectors = [
+        bio_selectors = [
             "[data-e2e='user-bio']",
-            "[data-e2e='user-page-header']",
             ".tiktok-bio",
             "h2[data-e2e='user-subtitle']",
         ]
 
-        bio_text = ""
-
         try:
-            # 대기 후 추출
             WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, selectors[0]))
+                EC.presence_of_element_located((By.CSS_SELECTOR, bio_selectors[0]))
             )
         except TimeoutException:
             pass
 
-        # 여러 셀렉터 시도
-        for selector in selectors:
+        for selector in bio_selectors:
             try:
                 elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
                 if elements:
-                    bio_text += " ".join([el.text for el in elements if el.text])
+                    text = elements[0].text.strip()
+                    if text:
+                        return text
             except Exception:
                 continue
 
-        return bio_text.strip()
+        return ""
+
+    def _extract_nickname(self) -> str:
+        """
+        크리에이터 닉네임(display name) 추출
+
+        Returns:
+            str: 닉네임
+        """
+        selectors = [
+            "[data-e2e='user-title']",
+            "h1[data-e2e='user-title']",
+            "[data-e2e='user-page-header'] h1",
+            "h2[data-e2e='user-subtitle']",
+        ]
+
+        for selector in selectors:
+            try:
+                el = self.driver.find_element(By.CSS_SELECTOR, selector)
+                text = el.text.strip()
+                if text:
+                    return text
+            except (NoSuchElementException, Exception):
+                continue
+
+        return ""
 
     def _extract_emails(self, bio_text: str) -> List[str]:
         """

@@ -15,7 +15,7 @@ class EmailExtractor:
     """이메일 추출기"""
 
     # 일반적인 이메일 패턴
-    EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,15}\b'
 
     # 숨겨진 이메일 패턴 (예: user [at] domain [dot] com)
     OBSCURED_PATTERN = r'\b[a-zA-Z0-9_.+-]+\s*[\[\(]at[\]\)]\s*[a-zA-Z0-9-]+\s*[\[\(]dot[\]\)]\s*[a-zA-Z0-9-.]+\b'
@@ -91,6 +91,11 @@ class EmailExtractor:
         if not email or '@' not in email:
             return False
 
+        # URL 인코딩 잔재 필터 (페이지 소스에서 \u002f 등이 이메일로 오탐)
+        local_part = email.split('@')[0]
+        if re.search(r'u[0-9a-fA-F]{4}$', local_part):
+            return False
+
         # 기본 패턴 검사
         pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
         if not re.match(pattern, email):
@@ -108,9 +113,9 @@ class EmailExtractor:
             if not domain or '.' not in domain:
                 return False
 
-            # TLD 검증
+            # TLD 검증 (2~15자)
             tld = domain.split('.')[-1]
-            if len(tld) < 2:
+            if len(tld) < 2 or len(tld) > 15:
                 return False
 
             return True
