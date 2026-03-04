@@ -121,9 +121,15 @@ class TikTokSearchScraper:
                 user_agent = get_random_user_agent()
                 options.add_argument(f"user-agent={user_agent}")
 
-                # Phase 2: 크롬 버전 자동 감지 및 처리
+                # Phase 2: 크롬 버전 자동 감지
                 try:
-                    self.driver = uc.Chrome(options=options, version_main=140)
+                    import subprocess
+                    chrome_ver = subprocess.check_output(
+                        ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--version"],
+                        text=True
+                    ).strip().split()[-1].split(".")[0]
+                    logger.info(f"Chrome version detected: {chrome_ver}")
+                    self.driver = uc.Chrome(options=options, version_main=int(chrome_ver))
                 except Exception as e:
                     logger.warning(f"⚠️  undetected-chromedriver 초기화 실패: {e}")
                     logger.info("🔄 일반 ChromeDriver로 폴백 시도...")
@@ -176,17 +182,47 @@ class TikTokSearchScraper:
                 service = Service(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service, options=options)
 
-            # 타임아웃 설정 (60초로 증가)
+            # 타임아웃 설정 (60초)
             self.driver.set_page_load_timeout(60)
 
-            # 초기 페이지 로드
-            self.driver.get("https://www.tiktok.com")
+            # 초기 페이지 로드 (타임아웃 시 about:blank으로 대체)
+            initial_load_ok = False
+            try:
+                self.driver.get("https://www.tiktok.com")
+                initial_load_ok = True
+            except Exception as e:
+                if "timeout" in str(e).lower():
+                    logger.warning("초기 페이지 로드 타임아웃 — about:blank으로 대체")
+                    try:
+                        self.driver.execute_script("window.stop();")
+                    except Exception:
+                        pass
+                    # 렌더러가 응답하지 않을 수 있으므로 about:blank으로 리셋
+                    try:
+                        self.driver.get("about:blank")
+                        time.sleep(1)
+                        initial_load_ok = True
+                    except Exception:
+                        logger.warning("about:blank 로드도 실패 — 계속 진행")
+                else:
+                    raise
             random_delay(self.delay_min, self.delay_max)
 
             # 봇 감지 우회 스크립트
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            try:
+                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            except Exception as e:
+                logger.warning(f"봇 감지 우회 스크립트 실패: {e}")
 
             # 쿠키 추가
+            if initial_load_ok:
+                try:
+                    # 쿠키 추가를 위해 tiktok.com 도메인 필요
+                    if "tiktok.com" not in self.driver.current_url:
+                        self.driver.get("https://www.tiktok.com")
+                except Exception:
+                    pass
+
             selenium_cookies = self.cookie_manager.format_for_selenium()
             for cookie in selenium_cookies:
                 try:
@@ -195,7 +231,17 @@ class TikTokSearchScraper:
                     logger.debug(f"쿠키 추가 실패 ({cookie['name']}): {str(e)}")
 
             # 페이지 새로고침으로 쿠키 적용
-            self.driver.refresh()
+            try:
+                self.driver.refresh()
+            except Exception as e:
+                if "timeout" in str(e).lower():
+                    logger.warning("페이지 새로고침 타임아웃 — 계속 진행")
+                    try:
+                        self.driver.execute_script("window.stop();")
+                    except Exception:
+                        pass
+                else:
+                    logger.warning(f"페이지 새로고침 실패: {e}")
             random_delay(self.delay_min, self.delay_max)
 
             logger.info("✅ Selenium 드라이버 초기화 완료")
