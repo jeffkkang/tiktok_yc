@@ -206,44 +206,45 @@ class CreatorDatabase:
 # Query generation (adapted from V7 — no sort_type/publish_time, uses period)
 # ---------------------------------------------------------------------------
 
-def generate_search_keywords(base_keyword: str,
-                             skip_keywords: Optional[Set[str]] = None) -> List[str]:
-    """Generate diverse search keywords across 5 categories."""
+def generate_search_queries(base_keyword: str,
+                            skip_keywords: Optional[Set[str]] = None) -> List[Dict]:
+    """Generate diverse search queries: keywords + hashtags, with sorting mix.
+
+    Returns list of dicts with keys: query, search_type, sorting
+      search_type: "keyword" or "hashtag"
+      sorting: "0" (relevance) or "1" (likes)
+    """
+    # --- Keywords ---
     product_type = [
         "korean sunscreen", "korean toner", "snail mucin",
         "rice toner", "centella cream", "korean serum",
         "korean cleansing balm", "korean eye cream",
         "korean moisturizer", "niacinamide korean",
     ]
-
     routine_technique = [
         "glass skin routine", "10 step korean skincare",
         "korean skincare morning routine", "korean skincare night routine",
         "korean double cleanse", "korean layering skincare",
         "7 skin method", "slugging korean",
     ]
-
     brand_names = [
         "cosrx review", "beauty of joseon", "innisfree haul",
         "laneige review", "anua review", "torriden review",
         "skin1004 review", "round lab review", "medicube review",
         "isntree review", "mixsoon review",
     ]
-
     trends = [
         "kbeauty haul", "korean makeup tutorial", "korean lip tint",
         "kbeauty favorites", "korean skincare haul",
         "olive young haul", "kbeauty must haves",
         "korean skincare routine", "kbeauty recommendations",
     ]
-
     niche = [
         "kbeauty for acne", "kbeauty for dry skin", "affordable kbeauty",
         "kbeauty for oily skin", "kbeauty for sensitive skin",
         "kbeauty for beginners", "kbeauty on a budget",
         "kbeauty dark skin", "kbeauty anti aging",
     ]
-
     base = [
         base_keyword,
         f"{base_keyword} tutorial",
@@ -253,52 +254,83 @@ def generate_search_keywords(base_keyword: str,
     ]
 
     all_keywords = base + product_type + routine_technique + brand_names + trends + niche
-
     if skip_keywords:
         all_keywords = [k for k in all_keywords if k not in skip_keywords]
-        logger.info(f"Skipping {len(skip_keywords)} used keywords, {len(all_keywords)} remaining")
 
+    # --- Hashtags (no spaces, more targeted) ---
+    hashtags = [
+        "kbeauty", "koreanskincare", "glassskin", "kbeautyhaul",
+        "koreanmakeup", "kbeautyroutine", "koreansunscreen",
+        "snailmucin", "oliveyounghaul", "kbeautyfavorites",
+        "beautyofjoseon", "cosrx", "affordablekbeauty",
+        "kbeautyreview", "koreantoner",
+    ]
+    if skip_keywords:
+        hashtags = [h for h in hashtags if h not in skip_keywords]
+
+    # Build query list with sorting diversity
+    queries = []
+
+    # Keywords: half relevance, half likes
     random.shuffle(all_keywords)
-    return all_keywords
+    mid = len(all_keywords) // 2
+    for kw in all_keywords[:mid]:
+        queries.append({"query": kw, "search_type": "keyword", "sorting": "0"})
+    for kw in all_keywords[mid:]:
+        queries.append({"query": kw, "search_type": "keyword", "sorting": "1"})
+
+    # Hashtags: all relevance (hashtag API doesn't support sorting param)
+    random.shuffle(hashtags)
+    for ht in hashtags:
+        queries.append({"query": ht, "search_type": "hashtag", "sorting": "0"})
+
+    # Interleave: keyword, keyword, hashtag, keyword, keyword, hashtag...
+    kw_queries = [q for q in queries if q["search_type"] == "keyword"]
+    ht_queries = [q for q in queries if q["search_type"] == "hashtag"]
+    interleaved = []
+    ki, hi = 0, 0
+    while ki < len(kw_queries) or hi < len(ht_queries):
+        for _ in range(2):
+            if ki < len(kw_queries):
+                interleaved.append(kw_queries[ki])
+                ki += 1
+        if hi < len(ht_queries):
+            interleaved.append(ht_queries[hi])
+            hi += 1
+
+    logger.info(f"Generated {len(interleaved)} queries "
+                f"({len(kw_queries)} keywords + {len(ht_queries)} hashtags)")
+    return interleaved
+
+
+def generate_search_keywords(base_keyword: str,
+                             skip_keywords: Optional[Set[str]] = None) -> List[str]:
+    """Legacy: return flat keyword list for --keywords-file compatibility."""
+    queries = generate_search_queries(base_keyword, skip_keywords)
+    return [q["query"] for q in queries if q["search_type"] == "keyword"]
 
 
 # ---------------------------------------------------------------------------
 # EnsembleData API Client
 # ---------------------------------------------------------------------------
 
-ENSEMBLE_API_URL = "https://ensembledata.com/apis/tt/keyword/search"
-PAGE_SIZE = 20  # EnsembleData returns 20 results per cursor offset
+KEYWORD_API_URL = "https://ensembledata.com/apis/tt/keyword/search"
+HASHTAG_API_URL = "https://ensembledata.com/apis/tt/hashtag/posts"
+PAGE_SIZE = 20  # EnsembleData returns ~20 results per cursor offset
 
 
 class EnsembleDataClient:
-    """Thin wrapper around EnsembleData TikTok keyword search API."""
+    """Wrapper around EnsembleData TikTok keyword + hashtag search APIs."""
 
     def __init__(self, token: str):
         self.token = token
         self.session = requests.Session()
         self.api_calls = 0
 
-    def search(self, keyword: str, cursor: int = 0,
-               period: int = 0) -> Optional[dict]:
-        """Call EnsembleData keyword search API.
-
-        Args:
-            keyword: Search keyword
-            cursor: Pagination offset (0, 20, 40, ...)
-            period: Time filter (0=all, 1=24h, 7=week, 30=month, 90=3mo, 180=6mo)
-
-        Returns:
-            Full API response dict, or None on error.
-        """
-        params = {
-            "name": keyword,
-            "cursor": cursor,
-            "period": period,
-            "token": self.token,
-        }
-
+    def _request(self, url: str, params: dict, label: str) -> Optional[dict]:
+        """Generic API request with retry on 429."""
         try:
-            resp = self.session.get(ENSEMBLE_API_URL, params=params, timeout=30)
+            resp = self.session.get(url, params=params, timeout=30)
             self.api_calls += 1
 
             if resp.status_code == 200:
@@ -309,22 +341,63 @@ class EnsembleDataClient:
             elif resp.status_code == 429:
                 logger.warning("API 레이트 리밋 — 5초 대기 후 재시도")
                 time.sleep(5)
-                resp = self.session.get(ENSEMBLE_API_URL, params=params, timeout=30)
+                resp = self.session.get(url, params=params, timeout=30)
                 self.api_calls += 1
                 if resp.status_code == 200:
                     return resp.json()
                 logger.error(f"재시도 실패: HTTP {resp.status_code}")
                 return None
             else:
-                logger.warning(f"API 응답 에러: HTTP {resp.status_code}")
+                logger.warning(f"API 응답 에러: HTTP {resp.status_code} ({label})")
                 return None
 
         except requests.exceptions.Timeout:
-            logger.warning(f"API 타임아웃: keyword={keyword}, cursor={cursor}")
+            logger.warning(f"API 타임아웃: {label}")
             return None
         except requests.exceptions.RequestException as e:
             logger.warning(f"API 요청 실패: {e}")
             return None
+
+    def keyword_search(self, keyword: str, cursor: int = 0,
+                       period: int = 0, country: str = "",
+                       sorting: str = "0") -> Optional[dict]:
+        """Call EnsembleData keyword search API.
+
+        Args:
+            keyword: Search keyword
+            cursor: Pagination offset (0, 20, 40, ...)
+            period: Time filter (0=all, 1=24h, 7=week, 30=month, 90=3mo, 180=6mo)
+            country: ISO country code (e.g. "US") — filters at API level
+            sorting: "0"=relevance, "1"=likes
+        """
+        params = {
+            "name": keyword,
+            "cursor": cursor,
+            "period": period,
+            "sorting": sorting,
+            "token": self.token,
+        }
+        if country:
+            params["country"] = country
+
+        return self._request(KEYWORD_API_URL, params,
+                             f"keyword={keyword}, cursor={cursor}")
+
+    def hashtag_search(self, hashtag: str,
+                       cursor: int = 0) -> Optional[dict]:
+        """Call EnsembleData hashtag search API.
+
+        Args:
+            hashtag: Hashtag without # prefix
+            cursor: Pagination cursor (0 to start)
+        """
+        params = {
+            "name": hashtag,
+            "cursor": cursor,
+            "token": self.token,
+        }
+        return self._request(HASHTAG_API_URL, params,
+                             f"hashtag={hashtag}, cursor={cursor}")
 
 
 # ---------------------------------------------------------------------------
@@ -341,12 +414,14 @@ class ScraperV8API:
         max_pages: int = 5,
         period: int = 0,
         regions: Optional[Set[str]] = None,
+        country: str = "",
     ):
         self.client = EnsembleDataClient(token)
         self.creator_db = CreatorDatabase(creator_db_file)
         self.max_pages = max_pages
         self.period = period
-        self.regions = regions  # None = all regions (no filter)
+        self.regions = regions  # fallback post-filter if API country not supported
+        self.country = country  # API-level country filter (e.g. "US")
 
         self.stats = {
             "keywords_searched": 0,
@@ -488,11 +563,17 @@ class ScraperV8API:
             "scraped_date": today,
         }
 
-    def _search_keyword(self, keyword: str, today: str,
-                        seen_usernames: Set[str]) -> List[Dict]:
-        """Search one keyword with pagination. Returns list of CSV rows."""
+    def _search_one(self, keyword: str, today: str,
+                    seen_usernames: Set[str],
+                    sorting: str = "0",
+                    is_hashtag: bool = False) -> List[Dict]:
+        """Search one keyword/hashtag with pagination. Returns list of CSV rows."""
         rows = []
         self.stats["keywords_searched"] += 1
+
+        search_type = "hashtag" if is_hashtag else "keyword"
+        sort_label = "likes" if sorting == "1" else "relevance"
+        label = f"{keyword} ({search_type}, {sort_label})"
 
         # Per-keyword counters for keyword_stats
         kw_total_creators = 0
@@ -503,11 +584,17 @@ class ScraperV8API:
 
         for page in range(self.max_pages):
             cursor = page * PAGE_SIZE
-            logger.info(f"  [{keyword}] page {page + 1}/{self.max_pages} (cursor={cursor})")
+            logger.info(f"  [{label}] page {page + 1}/{self.max_pages} (cursor={cursor})")
 
-            response = self.client.search(keyword, cursor=cursor, period=self.period)
+            if is_hashtag:
+                response = self.client.hashtag_search(keyword, cursor=cursor)
+            else:
+                response = self.client.keyword_search(
+                    keyword, cursor=cursor, period=self.period,
+                    country=self.country, sorting=sorting,
+                )
             if not response:
-                logger.warning(f"  [{keyword}] API 응답 없음, 다음 키워드로")
+                logger.warning(f"  [{label}] API 응답 없음, 다음으로")
                 break
 
             creators = self._extract_creators_from_response(response)
@@ -515,7 +602,7 @@ class ScraperV8API:
             kw_total_creators += len(creators)
 
             if not creators:
-                logger.info(f"  [{keyword}] 결과 없음 (page {page + 1}), 다음 키워드로")
+                logger.info(f"  [{label}] 결과 없음 (page {page + 1}), 다음으로")
                 break
 
             new_this_page = 0
@@ -542,7 +629,7 @@ class ScraperV8API:
                 elif self._last_filter_reason == "agency":
                     kw_agency += 1
 
-            logger.info(f"  [{keyword}] page {page + 1}: {len(creators)} items, {new_this_page} new emails")
+            logger.info(f"  [{label}] page {page + 1}: {len(creators)} items, {new_this_page} new emails")
 
             # Check if there's more data
             has_more = False
@@ -551,12 +638,13 @@ class ScraperV8API:
                 if isinstance(data_wrapper, dict):
                     has_more = data_wrapper.get("has_more", 0) == 1
                     if not has_more:
-                        has_more = bool(data_wrapper.get("cursor"))
+                        cursor_val = data_wrapper.get("cursor") or data_wrapper.get("nextCursor")
+                        has_more = bool(cursor_val)
             except Exception:
                 pass
 
             if not has_more and page > 0:
-                logger.info(f"  [{keyword}] 더 이상 결과 없음")
+                logger.info(f"  [{label}] 더 이상 결과 없음")
                 break
 
             # Rate limiting
@@ -564,14 +652,10 @@ class ScraperV8API:
                 delay = random.uniform(0.5, 1.0)
                 time.sleep(delay)
 
-        # Count agency filtered for this keyword from global stats delta
-        # (agency_excluded is tracked in _build_row via self.stats)
-        # We track it by counting rows that were None due to agency filter
-        # Simpler: count from _build_row calls that returned None for agency
-        # Already tracked globally — compute from per-keyword rows
-
         self.keyword_stats.append({
             "keyword": keyword,
+            "search_type": search_type,
+            "sorting": sort_label,
             "total_creators_found": kw_total_creators,
             "emails_found": kw_emails,
             "under_10k_count": kw_under_10k,
@@ -581,13 +665,15 @@ class ScraperV8API:
 
         return rows
 
-    def run(self, base_keyword: str, keywords: Optional[List[str]] = None,
+    def run(self, base_keyword: str, queries: Optional[List[Dict]] = None,
+            keywords: Optional[List[str]] = None,
             limit: int = 200, skip_keywords: Optional[Set[str]] = None) -> List[Dict]:
         """Execute the full API scraping pipeline.
 
         Args:
             base_keyword: Base keyword for query generation
-            keywords: Override keyword list (if None, auto-generate)
+            queries: Override query list (dicts with query/search_type/sorting)
+            keywords: Override keyword list (flat list, all as keyword search)
             limit: Target email count
             skip_keywords: Keywords to skip
 
@@ -597,26 +683,51 @@ class ScraperV8API:
         start_time = time.time()
         today = datetime.now().strftime("%Y-%m-%d")
 
-        if keywords is None:
-            keywords = generate_search_keywords(base_keyword, skip_keywords)
+        # Build query list
+        if queries is None:
+            if keywords is not None:
+                # Flat keyword list → convert to query dicts, alternate sorting
+                queries = []
+                for i, kw in enumerate(keywords):
+                    queries.append({
+                        "query": kw,
+                        "search_type": "keyword",
+                        "sorting": "1" if i % 2 else "0",
+                    })
+            else:
+                queries = generate_search_queries(base_keyword, skip_keywords)
 
         region_str = "all" if not self.regions else ",".join(sorted(self.regions))
+        country_str = self.country or "(post-filter)"
+        kw_count = sum(1 for q in queries if q["search_type"] == "keyword")
+        ht_count = sum(1 for q in queries if q["search_type"] == "hashtag")
+
         logger.info(f"=== V8 API Scraper starting ===")
         logger.info(f"  Base keyword: {base_keyword}")
-        logger.info(f"  Keywords: {len(keywords)}")
-        logger.info(f"  Max pages per keyword: {self.max_pages}")
+        logger.info(f"  Queries: {len(queries)} ({kw_count} keywords + {ht_count} hashtags)")
+        logger.info(f"  Max pages per query: {self.max_pages}")
         logger.info(f"  Period: {self.period}")
-        logger.info(f"  Region filter: {region_str}")
+        logger.info(f"  Country (API): {country_str}")
+        logger.info(f"  Region (fallback): {region_str}")
         logger.info(f"  Target: {limit} emails")
         logger.info(f"  Creator DB: {self.creator_db.total} existing")
 
         rows = []
         seen_usernames: Set[str] = set()
 
-        for idx, keyword in enumerate(keywords):
-            logger.info(f"\n[{idx + 1}/{len(keywords)}] Searching: {keyword}")
+        for idx, q in enumerate(queries):
+            query_text = q["query"]
+            search_type = q.get("search_type", "keyword")
+            sorting = q.get("sorting", "0")
+            is_hashtag = search_type == "hashtag"
 
-            new_rows = self._search_keyword(keyword, today, seen_usernames)
+            type_label = "#" if is_hashtag else ""
+            logger.info(f"\n[{idx + 1}/{len(queries)}] {type_label}{query_text}")
+
+            new_rows = self._search_one(
+                query_text, today, seen_usernames,
+                sorting=sorting, is_hashtag=is_hashtag,
+            )
             rows.extend(new_rows)
 
             # Save DB periodically
@@ -628,8 +739,8 @@ class ScraperV8API:
                 logger.info(f"\n  Target reached: {len(rows)}/{limit} emails")
                 break
 
-            # Brief delay between keywords
-            if idx < len(keywords) - 1:
+            # Brief delay between queries
+            if idx < len(queries) - 1:
                 time.sleep(random.uniform(0.3, 0.7))
 
         # Sort by follower count ascending (smallest first = highest priority)
@@ -674,14 +785,16 @@ class ScraperV8API:
         seconds = elapsed % 60
 
         region_str = "all" if not self.regions else ",".join(sorted(self.regions))
+        country_str = self.country or "none (post-filter)"
 
         print(f"""
 ========== SCRAPER V8 API RUN SUMMARY ==========
-Keywords searched: {s['keywords_searched']}
+Queries searched: {s['keywords_searched']}
 API calls: {s['api_calls']}
 Total items received: {s['total_items_received']}
 Unique creators seen: {s['unique_creators_seen']}
-Region filter: {region_str}
+Country (API filter): {country_str}
+Region (fallback filter): {region_str}
 Period filter: {self.period}
 
 Filtering:
@@ -725,8 +838,10 @@ def main():
     parser.add_argument("--period", type=int, default=0,
                         choices=[0, 1, 7, 30, 90, 180],
                         help="Time filter: 0=all, 1=24h, 7=week, 30=month, 90=3mo, 180=6mo")
+    parser.add_argument("--country", default="US",
+                        help="API-level country filter (e.g. 'US'). Empty string for no filter.")
     parser.add_argument("--region", default="US",
-                        help="Region filter: 'US', 'US,CA,GB', or 'all' for no filter")
+                        help="Fallback region filter: 'US', 'US,CA,GB', or 'all' for no filter")
     parser.add_argument("--creator-db", default="scraped_creators.json",
                         help="Creator DB file path")
     parser.add_argument("--keywords-file", default=None,
@@ -779,12 +894,16 @@ def main():
 
     skip_kw = set(args.skip_keywords) if args.skip_keywords else None
 
+    # Country for API-level filter
+    country = args.country if args.country.lower() != "all" else ""
+
     scraper = ScraperV8API(
         token=token,
         creator_db_file=args.creator_db,
         max_pages=max_pages,
         period=args.period,
         regions=regions,
+        country=country,
     )
 
     rows = scraper.run(
